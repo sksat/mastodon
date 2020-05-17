@@ -579,6 +579,52 @@ RSpec.describe ActivityPub::Activity::Create do
       end
     end
 
+    context 'with an encrypted message' do
+      let(:recipient) { Fabricate(:account) }
+      let(:target_device) { Fabricate(:device, account: recipient) }
+
+      subject { described_class.new(json, sender, delivery: true, delivered_to_account_id: recipient.id) }
+
+      let(:object_json) do
+        {
+          id: [ActivityPub::TagManager.instance.uri_for(sender), '#bar'].join,
+          type: 'EncryptedMessage',
+          attributedTo: {
+            type: 'Device',
+            deviceId: '1234',
+          },
+          to: {
+            type: 'Device',
+            deviceId: target_device.device_id,
+          },
+          messageType: 1,
+          cipherText: 'Foo',
+          messageFranking: {
+            type: 'MessageFranking',
+            digest: {
+              digestAlgorithm: 'Bar456',
+              digestValue: 'Foo123',
+            },
+          },
+        }
+      end
+
+      before do
+        subject.perform
+      end
+
+      it 'creates an encrypted message' do
+        encrypted_message = target_device.encrypted_messages.reload.first
+
+        expect(encrypted_message).to_not be_nil
+        expect(encrypted_message.from_device_id).to eq '1234'
+        expect(encrypted_message.from_account).to eq sender
+        expect(encrypted_message.type).to eq 1
+        expect(encrypted_message.body).to eq 'Foo'
+        expect(encrypted_message.message_franking).to include '"digestValue":"Foo123"'
+      end
+    end
+
     context 'when sender is followed by local users' do
       subject { described_class.new(json, sender, delivery: true) }
 
